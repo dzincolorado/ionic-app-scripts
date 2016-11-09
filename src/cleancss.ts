@@ -73,6 +73,6 @@ export interface CleanCssConfig {
   destFileName: string;
   // destSourceMapName: string;
 
-  processImport:string;
-  processImportFrom: string[];
+  processImport:boolean;
+  processImportFrom: Array<string>;
 }
