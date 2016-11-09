@@ -1,3 +1,21 @@
+<a name="0.0.42"></a>
+## [0.0.42](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.41...v0.0.42) (2016-11-09)
+
+
+### Bug Fixes
+
+* **bundling:** execute bundle updates if full bundle has completed at least once ([fbe56dc](https://github.com/driftyco/ionic-app-scripts/commit/fbe56dc))
+* **sass:** remove broken sass caching ([91faf0b](https://github.com/driftyco/ionic-app-scripts/commit/91faf0b))
+* **webpack:** use source-maps instead of eval for prod builds ([fdd86be](https://github.com/driftyco/ionic-app-scripts/commit/fdd86be))
+
+
+### Features
+
+* **error:** use datauri for favicon build status ([892cf4a](https://github.com/driftyco/ionic-app-scripts/commit/892cf4a))
+* **errors:** overlay build errors during development ([87f7648](https://github.com/driftyco/ionic-app-scripts/commit/87f7648))
+
+
+
 <a name="0.0.41"></a>
 ## [0.0.41](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.40...v0.0.41) (2016-11-07)
 

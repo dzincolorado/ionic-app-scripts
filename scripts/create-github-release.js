@@ -10,12 +10,12 @@ var packageJson = require(packageJsonPath);
 
 var github = new GithubApi({ version: '3.0.0'});
 
-github.authenticate({ type: 'oauth', token: process.env.GH_TOKEN });
+github.authenticate({ type: 'oauth', token: process.env.GITHUB_TOKEN });
 
 var changelogContent = execSync(changelogCommand).toString();
 
 github.releases.createRelease({
-  owner: 'driftyco',
+  owner: 'dzincolorado',
   repo: 'ionic-app-scripts',
   target_commitish: 'master',
   tag_name: 'v' + packageJson.version,
