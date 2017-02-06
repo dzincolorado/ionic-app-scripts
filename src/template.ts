@@ -1,58 +1,71 @@
-import { BuildContext, BuildState } from './util/interfaces';
-import { Logger } from './util/logger';
+import { BuildContext, BuildState, ChangedFile, File } from './util/interfaces';
+import { changeExtension } from './util/helpers';
+import { Logger } from './logger/logger';
 import { getJsOutputDest } from './bundle';
-import { join, parse, resolve } from 'path';
-import { readFileSync, writeFile } from 'fs';
+import { invalidateCache } from './rollup';
+import { dirname, extname, join, parse, resolve } from 'path';
+import { readFileSync, writeFileSync } from 'fs';
 
 
-export function templateUpdate(event: string, htmlFilePath: string, context: BuildContext) {
-  return new Promise((resolve) => {
+export function templateUpdate(changedFiles: ChangedFile[], context: BuildContext) {
+  try {
+    const changedTemplates = changedFiles.filter(changedFile => changedFile.ext === '.html');
     const start = Date.now();
     const bundleOutputDest = getJsOutputDest(context);
+    let bundleSourceText = readFileSync(bundleOutputDest, 'utf8');
 
-    function failed() {
-      context.transpileState = BuildState.RequiresBuild;
-      context.bundleState = BuildState.RequiresUpdate;
-      resolve();
-    }
-
-    try {
-      let bundleSourceText = readFileSync(bundleOutputDest, 'utf8');
-      let newTemplateContent = readFileSync(htmlFilePath, 'utf8');
-
-      bundleSourceText = replaceBundleJsTemplate(bundleSourceText, newTemplateContent, htmlFilePath);
-
-      if (bundleSourceText) {
-        // awesome, all good and template updated in the bundle file
-        const logger = new Logger(`template update`);
-        logger.setStartTime(start);
-
-        writeFile(bundleOutputDest, bundleSourceText, { encoding: 'utf8'}, (err) => {
-          if (err) {
-            // eww, error saving
-            logger.fail(err);
-            failed();
-
-          } else {
-            // congrats, all gud
-            Logger.debug(`updateBundledJsTemplate, updated: ${htmlFilePath}`);
-            context.templateState = BuildState.SuccessfulBuild;
-            logger.finish();
-            resolve();
-          }
-        });
-
-      } else {
-        failed();
+    // update the corresponding transpiled javascript file with the template changed (inline it)
+    // as well as the bundle
+    for (const changedTemplateFile of changedTemplates) {
+      const file = context.fileCache.get(changedTemplateFile.filePath);
+      if (! updateCorrespondingJsFile(context, file.content, changedTemplateFile.filePath)) {
+        throw new Error(`Failed to inline template ${changedTemplateFile.filePath}`);
       }
-
-    } catch (e) {
-      Logger.debug(`updateBundledJsTemplate error: ${e}`);
-      failed();
+      bundleSourceText = replaceExistingJsTemplate(bundleSourceText, file.content, changedTemplateFile.filePath);
     }
-  });
+
+    // invaldiate any rollup bundles, if they're not using rollup no harm done
+    invalidateCache();
+
+    // awesome, all good and template updated in the bundle file
+    const logger = new Logger(`template update`);
+    logger.setStartTime(start);
+
+    writeFileSync(bundleOutputDest, bundleSourceText, { encoding: 'utf8'});
+
+    // congrats, all gud
+    changedTemplates.forEach(changedTemplate => {
+      Logger.debug(`templateUpdate, updated: ${changedTemplate.filePath}`);
+    });
+
+    context.templateState = BuildState.SuccessfulBuild;
+    logger.finish();
+    resolve();
+
+  } catch (ex) {
+    Logger.debug(`templateUpdate error: ${ex.message}`);
+    context.transpileState = BuildState.RequiresBuild;
+    context.bundleState = BuildState.RequiresUpdate;
+    return Promise.resolve();
+  }
 }
 
+function updateCorrespondingJsFile(context: BuildContext, newTemplateContent: string, existingHtmlTemplatePath: string) {
+  const javascriptFiles = context.fileCache.getAll().filter((file: File) => dirname(file.path) === dirname(existingHtmlTemplatePath) && extname(file.path) === '.js');
+  for (const javascriptFile of javascriptFiles) {
+    const newContent = replaceExistingJsTemplate(javascriptFile.content, newTemplateContent, existingHtmlTemplatePath);
+    if (newContent && newContent !== javascriptFile.content) {
+      javascriptFile.content = newContent;
+      // set the file again to generate a new timestamp
+      // do the same for the typescript file just to invalidate any caches, etc.
+      context.fileCache.set(javascriptFile.path, javascriptFile);
+      const typescriptFilePath = changeExtension(javascriptFile.path, '.ts');
+      context.fileCache.set(typescriptFilePath, context.fileCache.get(typescriptFilePath));
+      return true;
+    }
+  }
+  return false;
+}
 
 export function inlineTemplate(sourceText: string, sourcePath: string): string {
   const componentDir = parse(sourcePath).dir;
@@ -105,9 +118,9 @@ export function replaceTemplateUrl(match: TemplateUrlMatch, htmlFilePath: string
 }
 
 
-export function replaceBundleJsTemplate(bundleSourceText: string, newTemplateContent: string, htmlFilePath: string): string {
+export function replaceExistingJsTemplate(existingSourceText: string, newTemplateContent: string, htmlFilePath: string): string {
   let prefix = getTemplatePrefix(htmlFilePath);
-  let startIndex = bundleSourceText.indexOf(prefix);
+  let startIndex = existingSourceText.indexOf(prefix);
 
   let isStringified = false;
 
@@ -116,7 +129,7 @@ export function replaceBundleJsTemplate(bundleSourceText: string, newTemplateCon
     isStringified = true;
   }
 
-  startIndex = bundleSourceText.indexOf(prefix);
+  startIndex = existingSourceText.indexOf(prefix);
   if (startIndex === -1) {
     return null;
   }
@@ -126,12 +139,12 @@ export function replaceBundleJsTemplate(bundleSourceText: string, newTemplateCon
     suffix = stringify(suffix);
   }
 
-  const endIndex = bundleSourceText.indexOf(suffix, startIndex + 1);
+  const endIndex = existingSourceText.indexOf(suffix, startIndex + 1);
   if (endIndex === -1) {
     return null;
   }
 
-  const oldTemplate = bundleSourceText.substring(startIndex, endIndex + suffix.length);
+  const oldTemplate = existingSourceText.substring(startIndex, endIndex + suffix.length);
   let newTemplate = getTemplateFormat(htmlFilePath, newTemplateContent);
 
   if (isStringified) {
@@ -139,11 +152,11 @@ export function replaceBundleJsTemplate(bundleSourceText: string, newTemplateCon
   }
 
   let lastChange: string = null;
-  while (bundleSourceText.indexOf(oldTemplate) > -1 && bundleSourceText !== lastChange) {
-    lastChange = bundleSourceText = bundleSourceText.replace(oldTemplate, newTemplate);
+  while (existingSourceText.indexOf(oldTemplate) > -1 && existingSourceText !== lastChange) {
+    lastChange = existingSourceText = existingSourceText.replace(oldTemplate, newTemplate);
   }
 
-  return bundleSourceText;
+  return existingSourceText;
 }
 
 function stringify(str: string) {

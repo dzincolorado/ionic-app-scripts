@@ -43,3 +43,4 @@ jspm_packages
 *.sw[mnpcod]
 
 .idea/
+bin/ion-dev.css

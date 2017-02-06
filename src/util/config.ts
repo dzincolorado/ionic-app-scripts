@@ -3,7 +3,7 @@ import { BuildContext, TaskInfo } from './interfaces';
 import { join, resolve } from 'path';
 import { objectAssign } from './helpers';
 import { FileCache } from './file-cache';
-
+import * as Constants from './constants';
 
 /**
  * Create a context object which is used by all the build tasks.
@@ -25,37 +25,91 @@ export function generateContext(context?: BuildContext): BuildContext {
     context.fileCache = new FileCache();
   }
 
-  context.rootDir = resolve(context.rootDir || getConfigValue(context, '--rootDir', null, ENV_VAR_ROOT_DIR, ENV_VAR_ROOT_DIR.toLowerCase(), processCwd));
-  setProcessEnvVar(ENV_VAR_ROOT_DIR, context.rootDir);
+  context.isProd = [
+    context.isProd,
+    hasArg('--prod')
+  ].find(val => typeof val === 'boolean');
 
-  context.tmpDir = resolve(context.tmpDir || getConfigValue(context, '--tmpDir', null, ENV_VAR_TMP_DIR, ENV_VAR_TMP_DIR.toLowerCase(), join(context.rootDir, TMP_DIR)));
-  setProcessEnvVar(ENV_VAR_TMP_DIR, context.tmpDir);
+  setProcessEnvVar(Constants.ENV_VAR_IONIC_ENV, (context.isProd ? Constants.ENV_VAR_PROD : Constants.ENV_VAR_DEV));
 
-  context.srcDir = resolve(context.srcDir || getConfigValue(context, '--srcDir', null, ENV_VAR_SRC_DIR, ENV_VAR_SRC_DIR.toLowerCase(), join(context.rootDir, SRC_DIR)));
-  setProcessEnvVar(ENV_VAR_SRC_DIR, context.srcDir);
+  // If context is prod then the following flags must be set to true
+  context.runAot = [
+    context.runAot,
+    context.isProd || hasArg('--aot'),
+  ].find(val => typeof val === 'boolean');
 
-  context.wwwDir = resolve(context.wwwDir || getConfigValue(context, '--wwwDir', null, ENV_VAR_WWW_DIR, ENV_VAR_WWW_DIR.toLowerCase(), join(context.rootDir, WWW_DIR)));
-  setProcessEnvVar(ENV_VAR_WWW_DIR, context.wwwDir);
+  context.runMinifyJs = [
+    context.runMinifyJs,
+    context.isProd || hasArg('--minifyJs')
+  ].find(val => typeof val === 'boolean');
 
-  context.wwwIndex = join(context.wwwDir, WWW_INDEX_FILENAME);
+  context.runMinifyCss = [
+    context.runMinifyCss,
+    context.isProd || hasArg('--minifyCss')
+  ].find(val => typeof val === 'boolean');
 
-  context.buildDir = resolve(context.buildDir || getConfigValue(context, '--buildDir', null, ENV_VAR_BUILD_DIR, ENV_VAR_BUILD_DIR.toLowerCase(), join(context.wwwDir, BUILD_DIR)));
-  setProcessEnvVar(ENV_VAR_BUILD_DIR, context.buildDir);
+  context.optimizeJs = [
+    context.optimizeJs,
+    context.isProd || hasArg('--optimizeJs')
+  ].find(val => typeof val === 'boolean');
 
-  setProcessEnvVar(ENV_VAR_APP_SCRIPTS_DIR, join(__dirname, '..', '..'));
+  if (typeof context.isWatch !== 'boolean') {
+    context.isWatch = hasArg('--watch');
+  }
 
-  const sourceMapValue = getConfigValue(context, '--sourceMap', null, ENV_VAR_SOURCE_MAP, ENV_VAR_SOURCE_MAP.toLowerCase(), 'eval');
-  setProcessEnvVar(ENV_VAR_SOURCE_MAP, sourceMapValue);
+  context.rootDir = resolve(context.rootDir || getConfigValue(context, '--rootDir', null, Constants.ENV_VAR_ROOT_DIR, Constants.ENV_VAR_ROOT_DIR.toLowerCase(), processCwd));
+  setProcessEnvVar(Constants.ENV_VAR_ROOT_DIR, context.rootDir);
+
+  context.srcDir = resolve(context.srcDir || getConfigValue(context, '--srcDir', null, Constants.ENV_VAR_SRC_DIR, Constants.ENV_VAR_SRC_DIR.toLowerCase(), join(context.rootDir, Constants.SRC_DIR)));
+  setProcessEnvVar(Constants.ENV_VAR_SRC_DIR, context.srcDir);
+
+  context.wwwDir = resolve(context.wwwDir || getConfigValue(context, '--wwwDir', null, Constants.ENV_VAR_WWW_DIR, Constants.ENV_VAR_WWW_DIR.toLowerCase(), join(context.rootDir, Constants.WWW_DIR)));
+  setProcessEnvVar(Constants.ENV_VAR_WWW_DIR, context.wwwDir);
+
+  context.wwwIndex = join(context.wwwDir, Constants.WWW_INDEX_FILENAME);
+
+  context.buildDir = resolve(context.buildDir || getConfigValue(context, '--buildDir', null, Constants.ENV_VAR_BUILD_DIR, Constants.ENV_VAR_BUILD_DIR.toLowerCase(), join(context.wwwDir, Constants.BUILD_DIR)));
+  setProcessEnvVar(Constants.ENV_VAR_BUILD_DIR, context.buildDir);
+
+  setProcessEnvVar(Constants.ENV_VAR_APP_SCRIPTS_DIR, join(__dirname, '..', '..'));
+
+  const generateSourceMap = getConfigValue(context, '--generateSourceMap', null, Constants.ENV_VAR_GENERATE_SOURCE_MAP, Constants.ENV_VAR_GENERATE_SOURCE_MAP.toLowerCase(), context.isProd || context.runMinifyJs ? null : 'true');
+  setProcessEnvVar(Constants.ENV_VAR_GENERATE_SOURCE_MAP, generateSourceMap);
+
+  const sourceMapTypeValue = getConfigValue(context, '--sourceMapType', null, Constants.ENV_VAR_SOURCE_MAP_TYPE, Constants.ENV_VAR_SOURCE_MAP_TYPE.toLowerCase(), Constants.SOURCE_MAP_TYPE_EXPENSIVE);
+  setProcessEnvVar(Constants.ENV_VAR_SOURCE_MAP_TYPE, sourceMapTypeValue);
+
+  const tsConfigPathValue = resolve(getConfigValue(context, '--tsconfig', null, Constants.ENV_TS_CONFIG, Constants.ENV_TS_CONFIG.toLowerCase(), join(context.rootDir, 'tsconfig.json')));
+  setProcessEnvVar(Constants.ENV_TS_CONFIG, tsConfigPathValue);
+
+  const appEntryPointPathValue = resolve(getConfigValue(context, '--appEntryPoint', null, Constants.ENV_APP_ENTRY_POINT, Constants.ENV_APP_ENTRY_POINT.toLowerCase(), join(context.srcDir, 'app', 'main.ts')));
+  setProcessEnvVar(Constants.ENV_APP_ENTRY_POINT, appEntryPointPathValue);
+
+  setProcessEnvVar(Constants.ENV_GLOB_UTIL, join(getProcessEnvVar(Constants.ENV_VAR_APP_SCRIPTS_DIR), 'dist', 'util', 'glob-util.js'));
+
+  const cleanBeforeCopy = getConfigValue(context, '--cleanBeforeCopy', null, Constants.ENV_CLEAN_BEFORE_COPY, Constants.ENV_CLEAN_BEFORE_COPY.toLowerCase(), null);
+  setProcessEnvVar(Constants.ENV_CLEAN_BEFORE_COPY, cleanBeforeCopy);
+
+  setProcessEnvVar(Constants.ENV_CLOSURE_JAR, join(getProcessEnvVar(Constants.ENV_VAR_APP_SCRIPTS_DIR), 'bin', 'closure-compiler.jar'));
+
+  const outputJsFileName = getConfigValue(context, '--outputJsFileName', null, Constants.ENV_OUTPUT_JS_FILE_NAME, Constants.ENV_OUTPUT_JS_FILE_NAME.toLowerCase(), 'main.js');
+  setProcessEnvVar(Constants.ENV_OUTPUT_JS_FILE_NAME, outputJsFileName);
+
+  const outputJsMapFileName = getConfigValue(context, '--outputJsMapFileName', null, Constants.ENV_OUTPUT_JS_MAP_FILE_NAME, Constants.ENV_OUTPUT_JS_MAP_FILE_NAME.toLowerCase(), 'main.js.map');
+  setProcessEnvVar(Constants.ENV_OUTPUT_JS_MAP_FILE_NAME, outputJsMapFileName);
+
+  const outputCssFileName = getConfigValue(context, '--outputCssFileName', null, Constants.ENV_OUTPUT_CSS_FILE_NAME, Constants.ENV_OUTPUT_CSS_FILE_NAME.toLowerCase(), 'main.css');
+  setProcessEnvVar(Constants.ENV_OUTPUT_CSS_FILE_NAME, outputCssFileName);
+
+  const outputCssMapFileName = getConfigValue(context, '--outputCssMapFileName', null, Constants.ENV_OUTPUT_CSS_MAP_FILE_NAME, Constants.ENV_OUTPUT_CSS_MAP_FILE_NAME.toLowerCase(), 'main.css.map');
+  setProcessEnvVar(Constants.ENV_OUTPUT_CSS_MAP_FILE_NAME, outputCssMapFileName);
+
+  setProcessEnvVar(Constants.ENV_WEBPACK_FACTORY, join(getProcessEnvVar(Constants.ENV_VAR_APP_SCRIPTS_DIR), 'dist', 'webpack', 'ionic-webpack-factory.js'));
+
+  setProcessEnvVar(Constants.ENV_WEBPACK_LOADER, join(getProcessEnvVar(Constants.ENV_VAR_APP_SCRIPTS_DIR), 'dist', 'webpack', 'loader.js'));
 
   if (!isValidBundler(context.bundler)) {
     context.bundler = bundlerStrategy(context);
-  }
-
-  context.isProd = getIsProd(context);
-  setIonicEnvironment(context.isProd);
-
-  if (typeof context.isWatch !== 'boolean') {
-    context.isWatch = hasArg('--watch', '-w');
   }
 
   context.inlineTemplates = true;
@@ -65,32 +119,11 @@ export function generateContext(context?: BuildContext): BuildContext {
   return context;
 }
 
-
-export function getIsProd(context: BuildContext) {
-  // only check if isProd hasn't already been manually set
-  if (typeof context.isProd === 'boolean') {
-    return context.isProd;
-  }
-  if (hasArg('--dev', '-d')) {
-    // not production: has a --dev or -d cmd line arg
-    return false;
-  }
-
-  let val = getPackageJsonConfig(context, ENV_VAR_IONIC_DEV.toLowerCase());
-  if (typeof val === 'boolean') {
-    return !val;
-  }
-
-  val = getProcessEnvVar(ENV_VAR_IONIC_DEV);
-  if (typeof val === 'boolean') {
-    return !val;
-  }
-
-  return true;
-}
-
-
 export function getUserConfigFile(context: BuildContext, task: TaskInfo, userConfigFile: string) {
+  if (!context) {
+    context = generateContext(context);
+  }
+
   if (userConfigFile) {
     return resolve(userConfigFile);
   }
@@ -135,7 +168,7 @@ export function bundlerStrategy(context: BuildContext): string {
   // 1) User provided a rollup config via cmd line args
   let val: any = getArgValue('--rollup', '-r');
   if (val) {
-    return BUNDLER_ROLLUP;
+    return Constants.BUNDLER_ROLLUP;
   }
 
   // 2) User provided both a rollup config and webpack config in package.json config
@@ -151,13 +184,13 @@ export function bundlerStrategy(context: BuildContext): string {
   // 3) User provided a rollup config env var
   val = getProcessEnvVar('ionic_rollup');
   if (val) {
-    return BUNDLER_ROLLUP;
+    return Constants.BUNDLER_ROLLUP;
   }
 
   // 4) User provided a rollup config in package.json config
   val = getPackageJsonConfig(context, 'ionic_rollup');
   if (val) {
-    return BUNDLER_ROLLUP;
+    return Constants.BUNDLER_ROLLUP;
   }
 
   // 5) User set bundler through full arg
@@ -179,16 +212,20 @@ export function bundlerStrategy(context: BuildContext): string {
   }
 
   // 8) Default to use webpack
-  return BUNDLER_WEBPACK;
+  return Constants.BUNDLER_WEBPACK;
 }
 
 
 function isValidBundler(bundler: any) {
-  return (bundler === BUNDLER_ROLLUP || bundler === BUNDLER_WEBPACK);
+  return (bundler === Constants.BUNDLER_ROLLUP || bundler === Constants.BUNDLER_WEBPACK);
 }
 
 
 export function getConfigValue(context: BuildContext, argFullName: string, argShortName: string, envVarName: string, packageConfigProp: string, defaultValue: string) {
+  if (!context) {
+    context = generateContext(context);
+  }
+
   // first see if the value was set in the command-line args
   const argVal = getArgValue(argFullName, argShortName);
   if (argVal !== null) {
@@ -227,6 +264,10 @@ function getArgValue(fullName: string, shortName: string): string {
 
 
 export function hasConfigValue(context: BuildContext, argFullName: string, argShortName: string, envVarName: string, defaultValue: boolean) {
+  if (!context) {
+    context = generateContext(context);
+  }
+
   if (hasArg(argFullName, argShortName)) {
     return true;
   }
@@ -249,18 +290,30 @@ export function hasConfigValue(context: BuildContext, argFullName: string, argSh
 
 
 export function hasArg(fullName: string, shortName: string = null): boolean {
-  return !!(processArgv.some(a => a === fullName) || (shortName !== null && processArgv.some(a => a === shortName)));
+  return !!(processArgv.some(a => a.toLowerCase() === fullName.toLowerCase()) ||
+    (shortName !== null && processArgv.some(a => a.toLowerCase() === shortName.toLowerCase())));
 }
 
 
-export function replacePathVars(context: BuildContext, filePath: string) {
+export function replacePathVars(context: BuildContext, filePath: string | string[] | { [key: string]: any }): any {
+  if (Array.isArray(filePath)) {
+    return filePath.map(f => replacePathVars(context, f));
+  }
+
+  if (typeof filePath === 'object') {
+    const clonedFilePaths = Object.assign({}, filePath);
+    for (let key in clonedFilePaths) {
+      clonedFilePaths[key] = replacePathVars(context, clonedFilePaths[key]);
+    }
+    return clonedFilePaths;
+  }
+
   return filePath.replace('{{SRC}}', context.srcDir)
     .replace('{{WWW}}', context.wwwDir)
     .replace('{{TMP}}', context.tmpDir)
     .replace('{{ROOT}}', context.rootDir)
     .replace('{{BUILD}}', context.buildDir);
 }
-
 
 export function getNodeBinExecutable(context: BuildContext, cmd: string) {
   let cmdPath = join(context.rootDir, 'node_modules', '.bin', cmd);
@@ -290,12 +343,6 @@ export function isDebugMode() {
   return (processEnv.ionic_debug_mode === 'true');
 }
 
-
-export function setIonicEnvironment(isProd: boolean) {
-  setProcessEnvVar(ENV_VAR_IONIC_ENV, (isProd ? ENV_VAR_PROD : ENV_VAR_DEV));
-}
-
-
 let processArgv: string[];
 export function setProcessArgs(argv: string[]) {
   processArgv = argv;
@@ -313,7 +360,9 @@ export function setProcessEnv(env: any) {
 setProcessEnv(process.env);
 
 export function setProcessEnvVar(key: string, value: any) {
-  processEnv[key] = value;
+  if (key && value) {
+    processEnv[key] = value;
+  }
 }
 
 export function getProcessEnvVar(key: string): any {
@@ -360,7 +409,6 @@ export function setAppPackageJsonData(data: any) {
   appPackageJsonData = data;
 }
 
-
 function getAppPackageJsonData(context: BuildContext) {
   if (!appPackageJsonData) {
     try {
@@ -370,26 +418,3 @@ function getAppPackageJsonData(context: BuildContext) {
 
   return appPackageJsonData;
 }
-
-
-const BUILD_DIR = 'build';
-const SRC_DIR = 'src';
-const TMP_DIR = '.tmp';
-const WWW_DIR = 'www';
-const WWW_INDEX_FILENAME = 'index.html';
-
-const ENV_VAR_PROD = 'prod';
-const ENV_VAR_DEV = 'dev';
-
-const ENV_VAR_IONIC_ENV = 'IONIC_ENV';
-const ENV_VAR_IONIC_DEV = 'IONIC_DEV';
-const ENV_VAR_ROOT_DIR = 'IONIC_ROOT_DIR';
-const ENV_VAR_TMP_DIR = 'IONIC_TMP_DIR';
-const ENV_VAR_SRC_DIR = 'IONIC_SRC_DIR';
-const ENV_VAR_WWW_DIR = 'IONIC_WWW_DIR';
-const ENV_VAR_BUILD_DIR = 'IONIC_BUILD_DIR';
-const ENV_VAR_APP_SCRIPTS_DIR = 'IONIC_APP_SCRIPTS_DIR';
-const ENV_VAR_SOURCE_MAP = 'IONIC_SOURCE_MAP';
-
-export const BUNDLER_ROLLUP = 'rollup';
-export const BUNDLER_WEBPACK = 'webpack';

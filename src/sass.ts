@@ -1,18 +1,18 @@
 import { basename, dirname, join, sep } from 'path';
-import { BuildContext, BuildState, TaskInfo } from './util/interfaces';
-import { BuildError, Logger } from './util/logger';
+import { BuildContext, BuildState, ChangedFile, TaskInfo } from './util/interfaces';
+import { BuildError } from './util/errors';
 import { bundle } from './bundle';
 import { ensureDirSync, readdirSync, writeFile } from 'fs-extra';
-import { fillConfigDefaults, generateContext, getUserConfigFile, replacePathVars } from './util/config';
-import { runSassDiagnostics } from './util/logger-sass';
-import { printDiagnostics, clearDiagnostics, DiagnosticsType } from './util/logger-diagnostics';
+import { fillConfigDefaults, getUserConfigFile, replacePathVars } from './util/config';
+import { Logger } from './logger/logger';
+import { runSassDiagnostics } from './logger/logger-sass';
+import { printDiagnostics, clearDiagnostics, DiagnosticsType } from './logger/logger-diagnostics';
 import { SassError, render as nodeSassRender, Result } from 'node-sass';
 import * as postcss from 'postcss';
 import * as autoprefixer from 'autoprefixer';
 
 
-export function sass(context?: BuildContext, configFile?: string) {
-  context = generateContext(context);
+export function sass(context: BuildContext, configFile?: string) {
   configFile = getUserConfigFile(context, taskInfo, configFile);
 
   const logger = new Logger('sass');
@@ -30,7 +30,7 @@ export function sass(context?: BuildContext, configFile?: string) {
 }
 
 
-export function sassUpdate(event: string, filePath: string, context: BuildContext) {
+export function sassUpdate(changedFiles: ChangedFile[], context: BuildContext) {
   const configFile = getUserConfigFile(context, taskInfo, null);
 
   const logger = new Logger('sass update');
@@ -59,7 +59,7 @@ export function sassWorker(context: BuildContext, configFile: string) {
   return Promise.all(bundlePromise).then(() => {
     clearDiagnostics(context, DiagnosticsType.Sass);
 
-    const sassConfig: SassConfig = fillConfigDefaults(configFile, taskInfo.defaultConfigFile);
+    const sassConfig: SassConfig = getSassConfig(context, configFile);
 
     // where the final css output file is saved
     if (!sassConfig.outFile) {
@@ -87,6 +87,10 @@ export function sassWorker(context: BuildContext, configFile: string) {
   });
 }
 
+export function getSassConfig(context: BuildContext, configFile: string): SassConfig {
+  configFile = getUserConfigFile(context, taskInfo, configFile);
+  return fillConfigDefaults(configFile, taskInfo.defaultConfigFile);
+}
 
 function generateSassData(context: BuildContext, sassConfig: SassConfig) {
   /**

@@ -1,21 +1,21 @@
-import { BuildContext, BuildState } from './util/interfaces';
-import { BuildError, Logger } from './util/logger';
+import * as Constants from './util/constants';
+import { BuildContext, BuildState, BuildUpdateMessage, ChangedFile } from './util/interfaces';
+import { BuildError } from './util/errors';
+import { emit, EventType } from './util/events';
+import { readFileAsync, setContext } from './util/helpers';
 import { bundle, bundleUpdate } from './bundle';
 import { clean } from './clean';
 import { copy } from './copy';
-import { emit, EventType } from './util/events';
-import { generateContext } from './util/config';
 import { lint, lintUpdate } from './lint';
+import { Logger } from './logger/logger';
 import { minifyCss, minifyJs } from './minify';
 import { ngc } from './ngc';
 import { sass, sassUpdate } from './sass';
 import { templateUpdate } from './template';
 import { transpile, transpileUpdate, transpileDiagnosticsOnly } from './transpile';
 
-
 export function build(context: BuildContext) {
-  context = generateContext(context);
-
+  setContext(context);
   const logger = new Logger(`build ${(context.isProd ? 'prod' : 'dev')}`);
 
   return buildWorker(context)
@@ -24,83 +24,96 @@ export function build(context: BuildContext) {
       logger.finish();
     })
     .catch(err => {
+      if (err.isFatal) { throw err; }
       throw logger.fail(err);
     });
 }
 
-
 function buildWorker(context: BuildContext) {
-  if (context.isProd) {
-    // production build
-    return buildProd(context);
-  }
-
-  // dev build
-  return buildDev(context);
+  return Promise.resolve().then(() => {
+    // load any 100% required files to ensure they exist
+    return validateRequiredFilesExist();
+  })
+  .then(([appEntryPointContents, tsConfigContents]) => {
+    return validateTsConfigSettings(tsConfigContents);
+  })
+  .then(() => {
+    return buildProject(context);
+  });
 }
 
+function validateRequiredFilesExist() {
+  return Promise.all([
+    readFileAsync(process.env[Constants.ENV_APP_ENTRY_POINT]),
+    readFileAsync(process.env[Constants.ENV_TS_CONFIG])
+  ]).catch((error) => {
+    if (error.code === 'ENOENT' && error.path === process.env[Constants.ENV_APP_ENTRY_POINT]) {
+      error = new BuildError(`${error.path} was not found. The "main.dev.ts" and "main.prod.ts" files have been deprecated. Please create a new file "main.ts" containing the content of "main.dev.ts", and then delete the deprecated files.
+                            For more information, please see the default Ionic project main.ts file here:
+                            https://github.com/driftyco/ionic2-app-base/tree/master/src/app/main.ts`);
+      error.isFatal = true;
+      throw error;
+    }
+    if (error.code === 'ENOENT' && error.path === process.env[Constants.ENV_TS_CONFIG]) {
+      error = new BuildError([`${error.path} was not found. The "tsconfig.json" file is missing. This file is required.`,
+        'For more information please see the default Ionic project tsconfig.json file here:',
+        'https://github.com/driftyco/ionic2-app-base/blob/master/tsconfig.json'].join('\n'));
+      error.isFatal = true;
+      throw error;
+    }
+    error.isFatal = true;
+    throw error;
+  });
+}
 
-function buildProd(context: BuildContext) {
+function validateTsConfigSettings(tsConfigFileContents: string) {
+
+  return new Promise((resolve, reject) => {
+    try {
+      const tsConfigJson = JSON.parse(tsConfigFileContents);
+      const isValid = tsConfigJson.hasOwnProperty('compilerOptions') &&
+        tsConfigJson.compilerOptions.hasOwnProperty('sourceMap') &&
+        tsConfigJson.compilerOptions.sourceMap === true;
+
+      if (!isValid) {
+        const error = new BuildError(['The "tsconfig.json" file must have compilerOptions.sourceMap set to true.',
+          'For more information please see the default Ionic project tsconfig.json file here:',
+          'https://github.com/driftyco/ionic2-app-base/blob/master/tsconfig.json'].join('\n'));
+        error.isFatal = true;
+        return reject(error);
+      }
+      resolve();
+    } catch (e) {
+      const error = new BuildError('The "tsconfig.json" file contains malformed JSON.');
+      error.isFatal = true;
+      return reject(error);
+    }
+  });
+}
+
+function buildProject(context: BuildContext) {
   // sync empty the www/build directory
   clean(context);
 
-  // async tasks
-  // these can happen all while other tasks are running
-  const copyPromise = copy(context);
+  buildId++;
 
-  // kick off ngc to run the Ahead of Time compiler
-  return ngc(context)
+  const copyPromise = copy(context);
+  const compilePromise = (context.runAot) ? ngc(context) : transpile(context);
+
+  return compilePromise
     .then(() => {
-      // ngc has finished, now let's bundle it all together
       return bundle(context);
     })
     .then(() => {
-      // js minify can kick off right away
-      const jsPromise = minifyJs(context);
-
-      // sass needs to finish, then css minify can run when sass is done
+      const minPromise = (context.runMinifyJs) ? minifyJs(context) : Promise.resolve();
       const sassPromise = sass(context)
         .then(() => {
-          return minifyCss(context);
+          return (context.runMinifyCss) ? minifyCss(context) : Promise.resolve();
         });
 
       return Promise.all([
-        jsPromise,
-        sassPromise
-      ]);
-    })
-    .then(() => {
-      // kick off the tslint after everything else
-      // nothing needs to wait on its completion
-      lint(context);
-
-      // ensure the async tasks have fully completed before resolving
-      return Promise.all([
-        copyPromise
-      ]);
-    })
-    .catch(err => {
-      throw new BuildError(err);
-    });
-}
-
-
-function buildDev(context: BuildContext) {
-  // sync empty the www/build directory
-  clean(context);
-
-  // async tasks
-  // these can happen all while other tasks are running
-  const copyPromise = copy(context);
-
-  // just bundle, and if that passes then do the rest at the same time
-  return transpile(context)
-    .then(() => {
-      return bundle(context);
-    })
-    .then(() => {
-      return Promise.all([
-        sass(context),
+        minPromise,
+        sassPromise,
         copyPromise
       ]);
     })
@@ -108,20 +121,23 @@ function buildDev(context: BuildContext) {
       // kick off the tslint after everything else
       // nothing needs to wait on its completion
       lint(context);
-      return Promise.resolve();
     })
     .catch(err => {
       throw new BuildError(err);
     });
 }
 
-
-export function buildUpdate(event: string, filePath: string, context: BuildContext) {
+export function buildUpdate(changedFiles: ChangedFile[], context: BuildContext) {
   return new Promise(resolve => {
     const logger = new Logger('build');
 
-    buildUpdateId++;
-    emit(EventType.BuildUpdateStarted, buildUpdateId);
+    buildId++;
+
+    const buildUpdateMsg: BuildUpdateMessage = {
+      buildId: buildId,
+      reloadApp: false
+    };
+    emit(EventType.BuildUpdateStarted, buildUpdateMsg);
 
     function buildTasksDone(resolveValue: BuildTaskResolveValue) {
       // all build tasks have been resolved or one of them
@@ -130,24 +146,31 @@ export function buildUpdate(event: string, filePath: string, context: BuildConte
       parallelTasksPromise.then(() => {
         // all parallel tasks are also done
         // so now we're done done
-        emit(EventType.BuildUpdateCompleted, buildUpdateId);
+        const buildUpdateMsg: BuildUpdateMessage = {
+          buildId: buildId,
+          reloadApp: resolveValue.requiresAppReload
+        };
+        emit(EventType.BuildUpdateCompleted, buildUpdateMsg);
 
-        if (resolveValue.requiresRefresh) {
-          // emit that we need to do a full page refresh
-          emit(EventType.ReloadApp);
-
-        } else {
+        if (!resolveValue.requiresAppReload) {
           // just emit that only a certain file changed
           // this one is useful when only a sass changed happened
           // and the webpack only needs to livereload the css
           // but does not need to do a full page refresh
-          emit(EventType.FileChange, resolveValue.changedFile);
+          emit(EventType.FileChange, resolveValue.changedFiles);
         }
 
-        if (filePath.endsWith('.ts')) {
+        let requiresLintUpdate = false;
+        for (const changedFile of changedFiles) {
+          if (changedFile.ext === '.ts' && changedFile.event === 'ch') {
+            requiresLintUpdate = true;
+            break;
+          }
+        }
+        if (requiresLintUpdate) {
           // a ts file changed, so let's lint it too, however
           // this task should run as an after thought
-          lintUpdate(event, filePath, context);
+          lintUpdate(changedFiles, context);
         }
 
         logger.finish('green', true);
@@ -160,16 +183,16 @@ export function buildUpdate(event: string, filePath: string, context: BuildConte
 
     // kick off all the build tasks
     // and the tasks that can run parallel to all the build tasks
-    const buildTasksPromise = buildUpdateTasks(event, filePath, context);
-    const parallelTasksPromise = buildUpdateParallelTasks(event, filePath, context);
+    const buildTasksPromise = buildUpdateTasks(changedFiles, context);
+    const parallelTasksPromise = buildUpdateParallelTasks(changedFiles, context);
 
     // whether it was resolved or rejected, we need to do the same thing
     buildTasksPromise
       .then(buildTasksDone)
       .catch(() => {
         buildTasksDone({
-          requiresRefresh: false,
-          changedFile: filePath
+          requiresAppReload: false,
+          changedFiles: changedFiles
         });
       });
   });
@@ -179,18 +202,21 @@ export function buildUpdate(event: string, filePath: string, context: BuildConte
  * Collection of all the build tasks than need to run
  * Each task will only run if it's set with eacn BuildState.
  */
-function buildUpdateTasks(event: string, filePath: string, context: BuildContext) {
+function buildUpdateTasks(changedFiles: ChangedFile[], context: BuildContext) {
   const resolveValue: BuildTaskResolveValue = {
-    requiresRefresh: false,
-    changedFile: filePath
+    requiresAppReload: false,
+    changedFiles: []
   };
 
   return Promise.resolve()
     .then(() => {
+      return loadFiles(changedFiles, context);
+    })
+    .then(() => {
       // TEMPLATE
       if (context.templateState === BuildState.RequiresUpdate) {
-        resolveValue.requiresRefresh = true;
-        return templateUpdate(event, filePath, context);
+        resolveValue.requiresAppReload = true;
+        return templateUpdate(changedFiles, context);
       }
       // no template updates required
       return Promise.resolve();
@@ -199,15 +225,15 @@ function buildUpdateTasks(event: string, filePath: string, context: BuildContext
     .then(() => {
       // TRANSPILE
       if (context.transpileState === BuildState.RequiresUpdate) {
-        resolveValue.requiresRefresh = true;
+        resolveValue.requiresAppReload = true;
         // we've already had a successful transpile once, only do an update
         // not that we've also already started a transpile diagnostics only
         // build that only needs to be completed by the end of buildUpdate
-        return transpileUpdate(event, filePath, context);
+        return transpileUpdate(changedFiles, context);
 
       } else if (context.transpileState === BuildState.RequiresBuild) {
         // run the whole transpile
-        resolveValue.requiresRefresh = true;
+        resolveValue.requiresAppReload = true;
         return transpile(context);
       }
       // no transpiling required
@@ -218,12 +244,12 @@ function buildUpdateTasks(event: string, filePath: string, context: BuildContext
       // BUNDLE
       if (context.bundleState === BuildState.RequiresUpdate) {
         // we need to do a bundle update
-        resolveValue.requiresRefresh = true;
-        return bundleUpdate(event, filePath, context);
+        resolveValue.requiresAppReload = true;
+        return bundleUpdate(changedFiles, context);
 
       } else if (context.bundleState === BuildState.RequiresBuild) {
         // we need to do a full bundle build
-        resolveValue.requiresRefresh = true;
+        resolveValue.requiresAppReload = true;
         return bundle(context);
       }
       // no bundling required
@@ -234,14 +260,30 @@ function buildUpdateTasks(event: string, filePath: string, context: BuildContext
       // SASS
       if (context.sassState === BuildState.RequiresUpdate) {
         // we need to do a sass update
-        return sassUpdate(event, filePath, context).then(outputCssFile => {
-          resolveValue.changedFile = outputCssFile;
+        return sassUpdate(changedFiles, context).then(outputCssFile => {
+          const changedFile: ChangedFile = {
+            event: Constants.FILE_CHANGE_EVENT,
+            ext: '.css',
+            filePath: outputCssFile
+          };
+
+          context.fileCache.set(outputCssFile, { path: outputCssFile, content: outputCssFile});
+
+          resolveValue.changedFiles.push(changedFile);
         });
 
       } else if (context.sassState === BuildState.RequiresBuild) {
         // we need to do a full sass build
         return sass(context).then(outputCssFile => {
-          resolveValue.changedFile = outputCssFile;
+          const changedFile: ChangedFile = {
+            event: Constants.FILE_CHANGE_EVENT,
+            ext: '.css',
+            filePath: outputCssFile
+          };
+
+          context.fileCache.set(outputCssFile, { path: outputCssFile, content: outputCssFile});
+
+          resolveValue.changedFiles.push(changedFile);
         });
       }
       // no sass build required
@@ -252,9 +294,29 @@ function buildUpdateTasks(event: string, filePath: string, context: BuildContext
     });
 }
 
+function loadFiles(changedFiles: ChangedFile[], context: BuildContext) {
+  // UPDATE IN-MEMORY FILE CACHE
+  let promises: Promise<any>[] = [];
+  for (const changedFile of changedFiles) {
+    if (changedFile.event === Constants.FILE_DELETE_EVENT) {
+      // remove from the cache on delete
+      context.fileCache.remove(changedFile.filePath);
+    } else {
+      // load the latest since the file changed
+      const promise = readFileAsync(changedFile.filePath);
+      promises.push(promise);
+      promise.then((content: string) => {
+        context.fileCache.set(changedFile.filePath, { path: changedFile.filePath, content: content});
+      });
+    }
+  }
+
+  return Promise.all(promises);
+}
+
 interface BuildTaskResolveValue {
-  requiresRefresh: boolean;
-  changedFile: string;
+  requiresAppReload: boolean;
+  changedFiles: ChangedFile[];
 }
 
 /**
@@ -262,7 +324,7 @@ interface BuildTaskResolveValue {
  * build, but we still need to make sure they've completed before we're
  * all done, it's also possible there are no parallelTasks at all
  */
-function buildUpdateParallelTasks(event: string, filePath: string, context: BuildContext) {
+function buildUpdateParallelTasks(changedFiles: ChangedFile[], context: BuildContext) {
   const parallelTasks: Promise<any>[] = [];
 
   if (context.transpileState === BuildState.RequiresUpdate) {
@@ -272,4 +334,4 @@ function buildUpdateParallelTasks(event: string, filePath: string, context: Buil
   return Promise.all(parallelTasks);
 }
 
-let buildUpdateId = 0;
+let buildId = 0;

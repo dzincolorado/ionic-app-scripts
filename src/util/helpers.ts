@@ -1,12 +1,9 @@
-import { BuildContext } from './interfaces';
-import { readFile, readJsonSync, writeFile } from 'fs-extra';
-import { BuildError } from './logger';
 import { basename, dirname, extname, join } from 'path';
+import { BuildContext, File } from './interfaces';
+import { createReadStream, createWriteStream, readFile, readFileSync, readJsonSync, remove, unlink, writeFile } from 'fs-extra';
 import * as osName from 'os-name';
 
 let _context: BuildContext;
-
-
 
 let cachedAppScriptsPackageJson: any;
 export function getAppScriptsPackageJson() {
@@ -17,7 +14,6 @@ export function getAppScriptsPackageJson() {
   }
   return cachedAppScriptsPackageJson;
 }
-
 
 export function getAppScriptsVersion() {
   const appScriptsPackageJson = getAppScriptsPackageJson();
@@ -67,6 +63,13 @@ export function getSystemInfo(userRootDir: string) {
 }
 
 
+export function splitLineBreaks(sourceText: string) {
+  if (!sourceText) return [];
+  sourceText = sourceText.replace(/\\r/g, '\n');
+  return sourceText.split('\n');
+}
+
+
 export const objectAssign = (Object.assign) ? Object.assign : function (target: any, source: any) {
   const output = Object(target);
 
@@ -94,25 +97,71 @@ export function writeFileAsync(filePath: string, content: string): Promise<any> 
   return new Promise((resolve, reject) => {
     writeFile(filePath, content, (err) => {
       if (err) {
-        reject(new BuildError(err));
-      } else {
-        resolve();
+        return reject(err);
       }
+      return resolve();
     });
   });
 }
-
 
 export function readFileAsync(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     readFile(filePath, 'utf-8', (err, buffer) => {
       if (err) {
-        reject(new BuildError(err));
-      } else {
-        resolve(buffer);
+        return reject(err);
       }
+      return resolve(buffer);
     });
   });
+}
+
+export function unlinkAsync(filePath: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    unlink(filePath, (err: Error) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+
+
+}
+
+export function rimRafAsync(directoryPath: string): Promise<null> {
+  return new Promise((resolve, reject) => {
+    remove(directoryPath, (err: Error) => {
+      if (err) {
+        return reject(err);
+      }
+      return resolve();
+    });
+  });
+}
+
+export function copyFileAsync(srcPath: string, destPath: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const writeStream = createWriteStream(destPath);
+
+    writeStream.on('error', (err: Error) => {
+      reject(err);
+    });
+
+    writeStream.on('close', () => {
+      resolve();
+    });
+
+    createReadStream(srcPath).pipe(writeStream);
+  });
+}
+
+export function createFileObject(filePath: string): File {
+  const content = readFileSync(filePath).toString();
+  return {
+    content: content,
+    path: filePath,
+    timestamp: Date.now()
+  };
 }
 
 export function setContext(context: BuildContext) {
@@ -137,4 +186,25 @@ export function changeExtension(filePath: string, newExtension: string) {
   const extensionlessfileName = basename(filePath, extension);
   const newFileName = extensionlessfileName + newExtension;
   return join(dir, newFileName);
+}
+
+export function escapeHtml(unsafe: string) {
+  return unsafe
+         .replace(/&/g, '&amp;')
+         .replace(/</g, '&lt;')
+         .replace(/>/g, '&gt;')
+         .replace(/"/g, '&quot;')
+         .replace(/'/g, '&#039;');
+}
+
+export function rangeReplace(source: string, startIndex: number, endIndex: number, newContent: string) {
+  return source.substring(0, startIndex) + newContent + source.substring(endIndex);
+}
+
+export function stringSplice(source: string, startIndex: number, numToDelete: number, newContent: string) {
+  return source.slice(0, startIndex) + newContent + source.slice(startIndex + Math.abs(numToDelete));
+}
+
+export function toUnixPath(filePath: string) {
+  return filePath.replace(/\\/g, '/');
 }

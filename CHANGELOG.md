@@ -1,12 +1,265 @@
+<a name="0.0.48"></a>
+## [0.0.48](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.47...v0.0.48) (2016-12-19)
+
+### Upgrade Instructions
+`@ionic/app-scripts` version `0.0.47` had some breaking changes so please make sure you have performed those upgrade instructions.
+
+### Bug Fixes
+
+* **diagnostics:** fix null pointers ([72adc86](https://github.com/driftyco/ionic-app-scripts/commit/72adc86))
+* **inline-templates:** check for existence of content ([#557](https://github.com/driftyco/ionic-app-scripts/issues/557)) ([b68e125](https://github.com/driftyco/ionic-app-scripts/commit/b68e125))
+* **logging:** don't log msgs about websocket state ([18185fb](https://github.com/driftyco/ionic-app-scripts/commit/18185fb))
+* **optimization:** stop removing decorators ([45b0255](https://github.com/driftyco/ionic-app-scripts/commit/45b0255))
+* **serve:** find an open port for the notification server if port is used. ([d6de413](https://github.com/driftyco/ionic-app-scripts/commit/d6de413))
+* **copy:** generate project context if it doesn't exist ([26f6db8](https://github.com/driftyco/ionic-app-scripts/commit/26f6db8a7d3398b940cfb4c4b3eb4a6f141e1be7#diff-b477061dcc036b7490cfc73741747819))
+
+
+### Features
+
+* **sass:** enable Sass indented files compilation ([#565](https://github.com/driftyco/ionic-app-scripts/issues/565)) ([f632298](https://github.com/driftyco/ionic-app-scripts/commit/f632298))
+
+
+
+<a name="0.0.47"></a>
+## [0.0.47](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.46...v0.0.47) (2016-12-12)
+
+### Upgrade Instructions
+
+#### Install latest Ionic CLI
+Install the latest ionic cli. `sudo` may be required depending upon your `npm` set-up.
+
+```
+npm install -g ionic@latest
+```
+
+#### Entry Point Changes
+Delete `main.dev.ts` and `main.prod.ts` and create a `main.ts` file with the following content:
+
+```
+import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
+
+import { AppModule } from './app.module';
+
+platformBrowserDynamic().bootstrapModule(AppModule);
+```
+
+#### Dev Builds By Default Changes
+All builds are now development (non-AoT) builds by default. This allows for a better development experience when testing on a device. To get started, please follow the steps below.
+
+Make sure the `scripts` section of `package.json` looks like this:
+
+```
+  "scripts": {
+    "ionic:build": "ionic-app-scripts build",
+    "ionic:serve": "ionic-app-scripts serve"
+  }
+```
+
+`ionic run android --prod` will do a production build that utilizes AoT compiling and minifaction.
+`ionic emulate ios --prod` will do a production build that utilizes AoT compiling and minifaction.
+`ionic run android` will do a development build
+`ionic emulate ios` will do a development build
+
+If you wish to run AoT but disable minifaction, do the following
+`ionic run android --aot`
+`ionic emulate ios --aot`
+
+
+#### Source Map Changes
+Change `ionic_source_map` to `ionic_source_map_type` in package.json if it is overridden.
+
+#### Config Changes
+There were significant improvements/changes to most configs. Please review the changes and make sure any custom configs are up to date.
+
+#### Validate TSConfig settings
+Verify that `tsconfig.json` is up to date with recommended settings:
+
+```
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "declaration": false,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "lib": [
+      "dom",
+      "es2015"
+    ],
+    "module": "es2015",
+    "moduleResolution": "node",
+    "sourceMap": true,
+    "target": "es5"
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "compileOnSave": false,
+  "atom": {
+    "rewriteTsconfig": false
+  }
+}
+```
+
+
+### Breaking Changes
+1. `main.dev.ts` and `main.prod.ts` have been deprecated in favor of `main.ts` with the content of `main.dev.ts`. The content of `main.ts` will be optimized at build time for production builds.
+2. Builds are now always development (non-AoT) by default. To enable `prod` builds, use the `--prod` option.
+3. `copy.config` and `watch.config` have breaking changes moving to an easier-to-extend configuration style.
+4. `copy.config` uses `node-glob` instead of `fs-extra` to do the copy. Migrate from directory/files to globs in any custom configs.
+5. `ionic_source_map` configuration has been changed to `ionic_source_map_type`.
+6. Source maps now use `source-map` devtool option by default instead of `eval`. Change `ionic_source_map_type` option to return to the faster building `eval`.
+
+### Bug Fixes
+
+* **AoT:** dynamically enable prod mode for AoT builds ([0594803](https://github.com/driftyco/ionic-app-scripts/commit/0594803))
+* **AoT:** use in-memory data store instead of .tmp directory for AoT codegen ([93106ff](https://github.com/driftyco/ionic-app-scripts/commit/93106ff))
+* **build:** every build should run clean sync and copy async. ([6d4eb6e](https://github.com/driftyco/ionic-app-scripts/commit/6d4eb6e))
+* **copy:** Resolve race condition in copy task, move to glob config ([cc99a73](https://github.com/driftyco/ionic-app-scripts/commit/cc99a73))
+* **lab:** add lab to files ([f42c980](https://github.com/driftyco/ionic-app-scripts/commit/f42c980))
+* **livereload:** livereload now correctly serves cordova plugins on run and emulate. ([a0c3f5d](https://github.com/driftyco/ionic-app-scripts/commit/a0c3f5d))
+* **livereload:** on project build all pages connected should reload. ([#513](https://github.com/driftyco/ionic-app-scripts/issues/513)) ([62d6b23](https://github.com/driftyco/ionic-app-scripts/commit/62d6b23))
+* **livereload:** use localhost instead of 0.0.0.0 when injecting live reload script ([#450](https://github.com/driftyco/ionic-app-scripts/issues/450)) ([7f8a0c3](https://github.com/driftyco/ionic-app-scripts/commit/7f8a0c3))
+* **logging:** remove unnecessary websocket error msg, clean up copy error msg ([1517b06](https://github.com/driftyco/ionic-app-scripts/commit/1517b06))
+* **ngc:** simpler AoT error reporting ([1b0f163](https://github.com/driftyco/ionic-app-scripts/commit/1b0f163))
+* **serve:** add flag to indicate to serve for a cordova app ([93782e7](https://github.com/driftyco/ionic-app-scripts/commit/93782e7))
+* **source-maps:** use detailed source-map as default, fix windows path issue ([19464b3](https://github.com/driftyco/ionic-app-scripts/commit/19464b3))
+* **workers:** generate context in worker threads ([af036ec](https://github.com/driftyco/ionic-app-scripts/commit/af036ec))
+
+
+### Features
+
+* **build:** replace --dev flag with --prod and add flags --aot, --minifyJs, --minifyCss, --optimizeJs ([99922ce](https://github.com/driftyco/ionic-app-scripts/commit/99922ce))
+* **bundle:** pre and post bundle hooks ([4835550](https://github.com/driftyco/ionic-app-scripts/commit/4835550))
+* **copy:** update copy config to move web workers ([a909fc4](https://github.com/driftyco/ionic-app-scripts/commit/a909fc4))
+* **lab:** fresh coat of paint ([edb6f09](https://github.com/driftyco/ionic-app-scripts/commit/edb6f09))
+* **replacePathVars:** support interpolation of objects and arrays ([#449](https://github.com/driftyco/ionic-app-scripts/issues/449)) ([e039d46](https://github.com/driftyco/ionic-app-scripts/commit/e039d46))
+* all arguments passed should be compared as case insensitive ([085c897](https://github.com/driftyco/ionic-app-scripts/commit/085c897))
+
+
+
+<a name="0.0.46"></a>
+## [0.0.46](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.44...v0.0.46) (2016-11-21)
+
+
+### Bug Fixes
+
+* **build:** better support for saving multiple files at a time ([254bb6c](https://github.com/driftyco/ionic-app-scripts/commit/254bb6c))
+* **copy:** ionicons copied from ionicons ([69f89a8](https://github.com/driftyco/ionic-app-scripts/commit/69f89a8))
+* **errors:** skip HTTP errors ([5906167](https://github.com/driftyco/ionic-app-scripts/commit/5906167))
+* **proxies:** Wrong parameter in Logger.info, in setupProxies function causing proxies not to load ([#395](https://github.com/driftyco/ionic-app-scripts/issues/395)) ([316b1de](https://github.com/driftyco/ionic-app-scripts/commit/316b1de))
+* **typescript:** lock typescript version to 2.0.x for now due to build error with 2.1.x ([ef7203b](https://github.com/driftyco/ionic-app-scripts/commit/ef7203b))
+* **webpack:** fix path resolution ([97c23f9](https://github.com/driftyco/ionic-app-scripts/commit/97c23f9))
+* **webpack:** reference json-loader to account for webpack breaking change ([d6fe709](https://github.com/driftyco/ionic-app-scripts/commit/d6fe709))
+* **webpack:** resolve modules to rootDir ([#365](https://github.com/driftyco/ionic-app-scripts/issues/365)) ([64eb845](https://github.com/driftyco/ionic-app-scripts/commit/64eb845))
+
+
+### Features
+
+* **options:** allow users to pass their own cleanCss Options ([#377](https://github.com/driftyco/ionic-app-scripts/issues/377)) ([20df6d4](https://github.com/driftyco/ionic-app-scripts/commit/20df6d4))
+
+
+<a name="0.0.45"></a>
+## [0.0.45](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.44...v0.0.45) (2016-11-17)
+
+
+### Bug Fixes
+
+* **errors:** runtime error immediately, selectable stack ([70f68da](https://github.com/driftyco/ionic-app-scripts/commit/70f68da))
+* **inline-templates:** update bundle and memory file representation on template change ([11a949d](https://github.com/driftyco/ionic-app-scripts/commit/11a949d))
+* **rollup:** invalidate cache on template change ([80c0eb6](https://github.com/driftyco/ionic-app-scripts/commit/80c0eb6))
+* **webpack:** invalidate cache by use of timestamps ([4d6bbd5](https://github.com/driftyco/ionic-app-scripts/commit/4d6bbd5))
+
+
+### Features
+
+* **run-build-update:** handle linked npm modules ([#375](https://github.com/driftyco/ionic-app-scripts/issues/375)) ([0f113c8](https://github.com/driftyco/ionic-app-scripts/commit/0f113c8))
+* **serve:** add '/ionic-lab' as an alias for the lab html file path. ([c319404](https://github.com/driftyco/ionic-app-scripts/commit/c319404))
+
+
+
+<a name="0.0.44"></a>
+## [0.0.44](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.43...v0.0.44) (2016-11-15)
+
+
+### Bug Fixes
+
+* **debug:** cmd+shift+8 to show debug menu ([a26d729](https://github.com/driftyco/ionic-app-scripts/commit/a26d729))
+* **error:** (cmd/ctrl)+8 for debug menu ([89550af](https://github.com/driftyco/ionic-app-scripts/commit/89550af))
+* **error:** add header padding for cordova iOS ([5c4c547](https://github.com/driftyco/ionic-app-scripts/commit/5c4c547))
+* **error:** apply correct css for runtime error close ([81f1d75](https://github.com/driftyco/ionic-app-scripts/commit/81f1d75))
+* **error:** fix content scrolling ([3b82465](https://github.com/driftyco/ionic-app-scripts/commit/3b82465))
+* **error:** reload immediately after js/html update ([07f918e](https://github.com/driftyco/ionic-app-scripts/commit/07f918e))
+* **error:** safari css fixes ([7c2fb59](https://github.com/driftyco/ionic-app-scripts/commit/7c2fb59))
+* **serve:** correct paths so that --lab works ([1d99a98](https://github.com/driftyco/ionic-app-scripts/commit/1d99a98))
+* **serve:** open browser to localhost ([14275c7](https://github.com/driftyco/ionic-app-scripts/commit/14275c7))
+* **transpile:** normalize and resolve paths always for OS independence ([ca6c889](https://github.com/driftyco/ionic-app-scripts/commit/ca6c889))
+* **watch:** fallback for when chokidar watch ready/error don't fire (happens on windows when file is ([519cd7f](https://github.com/driftyco/ionic-app-scripts/commit/519cd7f)), closes [#282](https://github.com/driftyco/ionic-app-scripts/issues/282)
+* **watch:** watch now ignores Mac OS meta data files ([02d0b8d](https://github.com/driftyco/ionic-app-scripts/commit/02d0b8d)), closes [#331](https://github.com/driftyco/ionic-app-scripts/issues/331)
+* **webpack:** source maps link to original src for ide debugging ([39edd2e](https://github.com/driftyco/ionic-app-scripts/commit/39edd2e))
+
+
+### Features
+
+* **debug:** debug menu options ([53d6e30](https://github.com/driftyco/ionic-app-scripts/commit/53d6e30))
+* **debug:** shake device to show debug menu ([770f4e3](https://github.com/driftyco/ionic-app-scripts/commit/770f4e3))
+* **error:** client runtime error reporting ([fc40b92](https://github.com/driftyco/ionic-app-scripts/commit/fc40b92))
+* **error:** syntax and error highlighting ([8836310](https://github.com/driftyco/ionic-app-scripts/commit/8836310))
+
+
+
+<a name="0.0.43"></a>
+## [0.0.43](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.42...v0.0.43) (2016-11-10)
+
+
+### Bug Fixes
+
+* **rollup:** removing rollup metadata prefix for paths ([350a288](https://github.com/driftyco/ionic-app-scripts/commit/350a288))
+* **watch:** remove shorthand arg for watch ([0685c0b](https://github.com/driftyco/ionic-app-scripts/commit/0685c0b)), closes [#290](https://github.com/driftyco/ionic-app-scripts/issues/290)
+* **webpack:** typo in import, close [#326](https://github.com/driftyco/ionic-app-scripts/issues/326) ([#341](https://github.com/driftyco/ionic-app-scripts/issues/341)) ([6b89fa2](https://github.com/driftyco/ionic-app-scripts/commit/6b89fa2))
+
+
+
 <a name="0.0.42"></a>
 ## [0.0.42](https://github.com/driftyco/ionic-app-scripts/compare/v0.0.41...v0.0.42) (2016-11-09)
 
+## Upgrade Steps
+To use this version of `@ionic/app-scripts`, follow these steps to upgrade:
+
+1. Install the latest version of the ionic cli
+
+  ```
+    npm install ionic@latest -g
+  ```
+
+  Note: sudo may be required depending on your workstation set-up
+
+2. Update the project's `package.json` file's `script` section to look like this:
+
+  ```
+  ...
+  "scripts" : {
+    "ionic:build": "ionic-app-scripts build",
+    "ionic:serve": "ionic-app-scripts serve"
+  }
+  ...
+  ```
+
+  Note: This is removing several deprecated Ionic scripts. If you have any of your own custom scripts, don't remove them.
+
+
+3. Install the latest version of `@ionic/app-scripts`
+
+  ```
+  npm install @ionic/app-scripts@latest --save-dev
+  ```
 
 ### Bug Fixes
 
 * **bundling:** execute bundle updates if full bundle has completed at least once ([fbe56dc](https://github.com/driftyco/ionic-app-scripts/commit/fbe56dc))
 * **sass:** remove broken sass caching ([91faf0b](https://github.com/driftyco/ionic-app-scripts/commit/91faf0b))
-* **webpack:** use source-maps instead of eval for prod builds ([fdd86be](https://github.com/driftyco/ionic-app-scripts/commit/fdd86be))
 
 
 ### Features

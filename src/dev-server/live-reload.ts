@@ -1,4 +1,5 @@
-import { hasDiagnostics } from '../util/logger-diagnostics';
+import { ChangedFile } from '../util/interfaces';
+import { hasDiagnostics } from '../logger/logger-diagnostics';
 import * as path from 'path';
 import * as tinylr from 'tiny-lr';
 import { ServeConfig } from './serve-config';
@@ -9,14 +10,13 @@ export function createLiveReloadServer(config: ServeConfig) {
   const liveReloadServer = tinylr();
   liveReloadServer.listen(config.liveReloadPort, config.host);
 
-  function fileChange(filePath: string | string[]) {
+  function fileChange(changedFiles: ChangedFile[]) {
     // only do a live reload if there are no diagnostics
     // the notification server takes care of showing diagnostics
     if (!hasDiagnostics(config.buildDir)) {
-      const files = Array.isArray(filePath) ? filePath : [filePath];
       liveReloadServer.changed({
         body: {
-          files: files.map(f => '/' + path.relative(config.wwwDir, f))
+          files: changedFiles.map(changedFile => '/' + path.relative(config.wwwDir, changedFile.filePath))
         }
       });
     }
@@ -25,7 +25,7 @@ export function createLiveReloadServer(config: ServeConfig) {
   events.on(events.EventType.FileChange, fileChange);
 
   events.on(events.EventType.ReloadApp, () => {
-    fileChange('index.html');
+    fileChange([{ event: 'change', ext: '.html', filePath: 'index.html'}]);
   });
 }
 
@@ -53,6 +53,9 @@ export function injectLiveReloadScript(content: any, host: string, port: Number)
 }
 
 function getLiveReloadScript(host: string, port: Number) {
+  if (host === '0.0.0.0') {
+    host = 'localhost';
+  }
   var src = `//${host}:${port}/livereload.js?snipver=1`;
   return `  <!-- Ionic Dev Server: Injected LiveReload Script -->\n  <script src="${src}" async="" defer=""></script>`;
 }

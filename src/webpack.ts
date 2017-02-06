@@ -1,10 +1,9 @@
-import { FileCache } from './util/file-cache';
-import { BuildContext, BuildState, File, TaskInfo } from './util/interfaces';
-import { BuildError, IgnorableError, Logger } from './util/logger';
-import { changeExtension, readFileAsync, setContext } from './util/helpers';
+import { BuildContext, BuildState, ChangedFile, TaskInfo } from './util/interfaces';
+import { BuildError, IgnorableError } from './util/errors';
 import { emit, EventType } from './util/events';
-import { fillConfigDefaults, generateContext, getUserConfigFile, replacePathVars } from './util/config';
-import { extname, join } from 'path';
+import { join } from 'path';
+import { fillConfigDefaults, getUserConfigFile, replacePathVars } from './util/config';
+import { Logger } from './logger/logger';
 import * as webpackApi from 'webpack';
 
 import { EventEmitter } from 'events';
@@ -22,14 +21,11 @@ const INCREMENTAL_BUILD_SUCCESS = 'incremental_build_success';
  * To mitigate this, store pending "webpack watch"/bundle update promises in this array and only resolve the
  * the most recent one. reject all others at that time with an IgnorableError.
  */
-let pendingPromises: Promise<void>[] = [];
+let pendingPromises: Promise<any>[] = [];
 
 export function webpack(context: BuildContext, configFile: string) {
-  context = generateContext(context);
   configFile = getUserConfigFile(context, taskInfo, configFile);
 
-  Logger.debug('Webpack: Setting Context on shared singleton');
-  setContext(context);
   const logger = new Logger('webpack');
 
   return webpackWorker(context, configFile)
@@ -44,28 +40,13 @@ export function webpack(context: BuildContext, configFile: string) {
 }
 
 
-export function webpackUpdate(event: string, path: string, context: BuildContext, configFile: string) {
+export function webpackUpdate(changedFiles: ChangedFile[], context: BuildContext, configFile?: string) {
   const logger = new Logger('webpack update');
-  const extension = extname(path);
-
   const webpackConfig = getWebpackConfig(context, configFile);
-  return Promise.resolve().then(() => {
-    if (extension === '.ts') {
-      Logger.debug('webpackUpdate: Typescript File Changed');
-      return typescriptFileChanged(path, context.fileCache);
-    } else {
-      Logger.debug('webpackUpdate: Non-Typescript File Changed');
-      return otherFileChanged(path).then((file: File) => {
-        return [file];
-      });
-    }
-  })
-    .then((files: File[]) => {
-      Logger.debug('webpackUpdate: Starting Incremental Build');
-      const promisetoReturn = runWebpackIncrementalBuild(false, context, webpackConfig);
-      emit(EventType.WebpackFilesChanged, [path]);
-      return promisetoReturn;
-    }).then((stats: any) => {
+  Logger.debug('webpackUpdate: Starting Incremental Build');
+  const promisetoReturn = runWebpackIncrementalBuild(false, context, webpackConfig);
+  emit(EventType.WebpackFilesChanged, null);
+  return promisetoReturn.then((stats: any) => {
       // the webpack incremental build finished, so reset the list of pending promises
       pendingPromises = [];
       Logger.debug('webpackUpdate: Incremental Build Done, processing Data');
@@ -87,7 +68,7 @@ export function webpackUpdate(event: string, path: string, context: BuildContext
 export function webpackWorker(context: BuildContext, configFile: string): Promise<any> {
   const webpackConfig = getWebpackConfig(context, configFile);
 
-  let promise: Promise<void> = null;
+  let promise: Promise<any> = null;
   if (context.isWatch) {
     promise = runWebpackIncrementalBuild(!context.webpackWatch, context, webpackConfig);
   } else {
@@ -159,7 +140,7 @@ function runWebpackIncrementalBuild(initializeWatch: boolean, context: BuildCont
   return promise;
 }
 
-function handleWebpackBuildFailure(resolve: Function, reject: Function, error: Error, promise: Promise<void>, pendingPromises: Promise<void>[]) {
+function handleWebpackBuildFailure(resolve: Function, reject: Function, error: Error, promise: Promise<any>, pendingPromises: Promise<void>[]) {
   // check if the promise if the last promise in the list of pending promises
   if (pendingPromises.length > 0 && pendingPromises[pendingPromises.length - 1] === promise) {
     // reject this one with a build error
@@ -170,7 +151,7 @@ function handleWebpackBuildFailure(resolve: Function, reject: Function, error: E
   reject(new IgnorableError());
 }
 
-function handleWebpackBuildSuccess(resolve: Function, reject: Function, stats: any, promise: Promise<void>, pendingPromises: Promise<void>[]) {
+function handleWebpackBuildSuccess(resolve: Function, reject: Function, stats: any, promise: Promise<any>, pendingPromises: Promise<void>[]) {
   // check if the promise if the last promise in the list of pending promises
   if (pendingPromises.length > 0 && pendingPromises[pendingPromises.length - 1] === promise) {
     Logger.debug('handleWebpackBuildSuccess: Resolving with Webpack data');
@@ -205,22 +186,9 @@ export function getWebpackConfig(context: BuildContext, configFile: string): Web
 }
 
 
-export function getOutputDest(context: BuildContext, webpackConfig: WebpackConfig) {
+export function getOutputDest(context: BuildContext) {
+  const webpackConfig = getWebpackConfig(context, null);
   return join(webpackConfig.output.path, webpackConfig.output.filename);
-}
-
-function typescriptFileChanged(fileChangedPath: string, fileCache: FileCache): File[] {
-  // convert to the .js file because those are the transpiled files in memory
-  const jsFilePath = changeExtension(fileChangedPath, '.js');
-  const sourceFile = fileCache.get(jsFilePath);
-  const mapFile = fileCache.get(jsFilePath + '.map');
-  return [sourceFile, mapFile];
-}
-
-function otherFileChanged(fileChangedPath: string) {
-  return readFileAsync(fileChangedPath).then((content: string) => {
-    return { path: fileChangedPath, content: content};
-  });
 }
 
 const taskInfo: TaskInfo = {
@@ -235,11 +203,17 @@ const taskInfo: TaskInfo = {
 export interface WebpackConfig {
   // https://www.npmjs.com/package/webpack
   devtool: string;
-  entry: string;
+  entry: string | { [key: string]: any };
   output: WebpackOutputObject;
+  resolve: WebpackResolveObject;
 }
 
 export interface WebpackOutputObject {
   path: string;
   filename: string;
+}
+
+export interface WebpackResolveObject {
+  extensions: string[];
+  modules: string[];
 }

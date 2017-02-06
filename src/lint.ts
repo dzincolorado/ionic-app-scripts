@@ -1,20 +1,19 @@
 import { access } from 'fs';
-import { BuildContext, TaskInfo } from './util/interfaces';
-import { BuildError, Logger } from './util/logger';
-import { generateContext, getUserConfigFile } from './util/config';
-import { join } from 'path';
+import { BuildContext, ChangedFile, TaskInfo } from './util/interfaces';
+import { BuildError } from './util/errors';
 import { createProgram, findConfiguration, getFileNames } from 'tslint';
-import { runTsLintDiagnostics } from './util/logger-tslint';
-import { printDiagnostics, DiagnosticsType } from './util/logger-diagnostics';
+import { getUserConfigFile } from './util/config';
+import { join } from 'path';
+import { Logger } from './logger/logger';
+import { printDiagnostics, DiagnosticsType } from './logger/logger-diagnostics';
+import { runTsLintDiagnostics } from './logger/logger-tslint';
 import { runWorker } from './worker-client';
 import * as Linter from 'tslint';
 import * as fs from 'fs';
 import * as ts from 'typescript';
 
 
-export function lint(context?: BuildContext, configFile?: string) {
-  context = generateContext(context);
-
+export function lint(context: BuildContext, configFile?: string) {
   return runWorker('lint', 'lintWorker', context, configFile)
     .catch(err => {
       throw new BuildError(err);
@@ -30,12 +29,13 @@ export function lintWorker(context: BuildContext, configFile: string) {
 }
 
 
-export function lintUpdate(event: string, filePath: string, context: BuildContext) {
+export function lintUpdate(changedFiles: ChangedFile[], context: BuildContext) {
+  const changedTypescriptFiles = changedFiles.filter(changedFile => changedFile.ext === '.ts');
   return new Promise(resolve => {
     // throw this in a promise for async fun, but don't let it hang anything up
     const workerConfig: LintWorkerConfig = {
       configFile: getUserConfigFile(context, taskInfo, null),
-      filePath: filePath
+      filePaths: changedTypescriptFiles.map(changedTypescriptFile => changedTypescriptFile.filePath)
     };
 
     runWorker('lint', 'lintUpdateWorker', context, workerConfig);
@@ -48,7 +48,7 @@ export function lintUpdateWorker(context: BuildContext, workerConfig: LintWorker
   return getLintConfig(context, workerConfig.configFile).then(configFile => {
     // there's a valid tslint config, let's continue (but be quiet about it!)
     const program = createProgram(configFile, context.srcDir);
-    return lintFile(context, program, workerConfig.filePath);
+    return lintFiles(context, program, workerConfig.filePaths);
   }).catch(() => {
   });
 }
@@ -65,8 +65,15 @@ function lintApp(context: BuildContext, configFile: string) {
   return Promise.all(promises);
 }
 
+function lintFiles(context: BuildContext, program: ts.Program, filePaths: string[]) {
+  const promises: Promise<any>[] = [];
+  for (const filePath of filePaths) {
+    promises.push(lintFile(context, program, filePath));
+  }
+  return Promise.all(promises);
+}
 
-function lintFile(context: BuildContext, program: ts.Program, filePath: string) {
+function lintFile(context: BuildContext, program: ts.Program, filePath: string): Promise<any> {
   return new Promise((resolve) => {
 
     if (isMpegFile(filePath)) {
@@ -161,5 +168,5 @@ const taskInfo: TaskInfo = {
 
 export interface LintWorkerConfig {
   configFile: string;
-  filePath: string;
+  filePaths: string[];
 }

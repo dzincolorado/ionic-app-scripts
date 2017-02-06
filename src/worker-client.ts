@@ -1,5 +1,6 @@
 import { BuildContext, WorkerProcess, WorkerMessage } from './util/interfaces';
-import { BuildError, Logger } from './util/logger';
+import { BuildError } from './util/errors';
+import { Logger } from './logger/logger';
 import { fork, ChildProcess } from 'child_process';
 import { join } from 'path';
 
@@ -21,6 +22,10 @@ export function runWorker(taskModule: string, taskWorker: string, context: Build
         buildDir: context.buildDir,
         isProd: context.isProd,
         isWatch: context.isWatch,
+        runAot: context.runAot,
+        runMinifyJs: context.runMinifyJs,
+        runMinifyCss: context.runMinifyCss,
+        optimizeJs: context.optimizeJs,
         bundler: context.bundler,
         inlineTemplates: context.inlineTemplates,
       },
